@@ -1,9 +1,12 @@
 package routes
 
 import (
+	"bytes"
 	"crypto/md5"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +14,8 @@ import (
 )
 
 const UploadPath = "/static/images/"
+
+const Attributes = "?returnFaceAttributes=emotion,glasses"
 
 func hashFileName(filename string) string {
 	h := md5.New()
@@ -49,7 +54,32 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	defer faceFile.Close()
 
 	// Send Images to Azure
+	url := os.Getenv("AZUREBASEURL") + Attributes
 
+	idPath = strings.Replace(idPath, "\\", "/", -1)
+	idImgUrl := os.Getenv("SERVER_URL") + idPath
+
+	jsonBody := fmt.Sprintf(`{"url":"%s"}`, idImgUrl)
+	log.Println(jsonBody)
+
+	body := []byte(jsonBody)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Ocp-Apim-Subscription-Key", os.Getenv("API_KEY"))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+
+	if err != nil {
+		panic(err)
+	}
+
+	defer resp.Body.Close()
+
+	resBody, _ := ioutil.ReadAll(resp.Body)
+	log.Println(string(resBody))
 	// Return with Face ID(s)
 
 	// Delete images

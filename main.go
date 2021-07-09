@@ -8,6 +8,7 @@ import (
 
 	"github.com/edwinwalela/jamii-bio/routes"
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 )
 
 const PORT = 8000
@@ -15,6 +16,7 @@ const PORT = 8000
 var URL = fmt.Sprintf("0.0.0.0:%d", PORT)
 
 func main() {
+	godotenv.Load()
 	r := mux.NewRouter()
 	r.HandleFunc("/detect", routes.DetectHandler)
 	r.HandleFunc("/verify", routes.VerificationHandler)
