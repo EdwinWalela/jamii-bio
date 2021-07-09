@@ -18,6 +18,7 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/detect", routes.DetectHandler)
 	r.HandleFunc("/verify", routes.VerificationHandler)
+	r.PathPrefix("/static/").Handler(http.StripPrefix("/static", http.FileServer(http.Dir("static"))))
 
 	srv := &http.Server{
 		Addr:         URL,
