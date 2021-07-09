@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"crypto/md5"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -10,12 +12,18 @@ import (
 
 const UploadPath = "/static/images/"
 
+func hashFileName(filename string) string {
+	h := md5.New()
+	h.Write([]byte(filename))
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
 func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	idFace, idFormFile, idErr := r.FormFile("id")
 	userFace, faceFormFile, faceErr := r.FormFile("face")
 
-	idFaceFileName := "id-1234." + strings.Split(idFormFile.Filename, ".")[1]
-	userFaceFileName := "face-1234." + strings.Split(faceFormFile.Filename, ".")[1]
+	idFaceFileName := hashFileName(idFormFile.Filename) + "." + strings.Split(idFormFile.Filename, ".")[1]
+	userFaceFileName := hashFileName(faceFormFile.Filename) + "." + strings.Split(faceFormFile.Filename, ".")[1]
 
 	if idErr != nil {
 		panic(idErr)
@@ -40,8 +48,15 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	defer idFile.Close()
 	defer faceFile.Close()
 
+	// Send Images to Azure
+
+	// Return with Face ID(s)
+
+	// Delete images
+
 	_, _ = io.WriteString(w, "File uploaded")
 	_, _ = io.Copy(idFile, idFace)
+	_, _ = io.Copy(faceFile, userFace)
 
 }
 
