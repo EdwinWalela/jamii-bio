@@ -4,7 +4,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 )
+
+const UploadPath = "/static/images/"
 
 func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	idFace, idFaceHandler, idErr := r.FormFile("id")
@@ -19,8 +22,8 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 
 	defer idFace.Close()
 	// defer userFace.Close()
-
-	idFile, err := os.OpenFile(idFaceHandler.Filename, os.O_WRONLY|os.O_CREATE, 0666)
+	path := filepath.Join(".", UploadPath)
+	idFile, err := os.OpenFile(path+idFaceHandler.Filename, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		panic(err)
 	}
