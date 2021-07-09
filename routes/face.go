@@ -20,7 +20,7 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	defer idFace.Close()
 	// defer userFace.Close()
 
-	idFile, err := os.OpenFile("id", os.O_WRONLY|os.O_CREATE, 0666)
+	idFile, err := os.OpenFile(idFaceHandler.Filename, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		panic(err)
 	}
