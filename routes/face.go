@@ -143,6 +143,11 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		res.FaceId = append(res.FaceId, face.FaceId)
 	}
+
+	if !res.EmotionMatch {
+		res.FaceId = []string{}
+	}
+
 	// Delete images
 	idFile.Close()
 	faceFile.Close()
