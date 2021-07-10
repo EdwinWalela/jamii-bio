@@ -73,56 +73,60 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	defer faceFile.Close()
 
 	// Send Images to Azure
-	url := os.Getenv("AZUREBASEURL") + Attributes
+	reqUrl := os.Getenv("AZUREBASEURL") + Attributes
 
 	idPath = strings.Replace(idPath, "\\", "/", -1)
 	idImgUrl := os.Getenv("SERVER_URL") + idPath
 
-	jsonBody := fmt.Sprintf(`{"url":"%s"}`, idImgUrl)
+	facePath = strings.Replace(facePath, "\\", "/", -1)
+	faceUrl := os.Getenv("SERVER_URL") + facePath
 
-	body := []byte(jsonBody)
+	faceUrls := []string{idImgUrl, faceUrl}
+	var detectedFaces []DetectedFace
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	for _, url := range faceUrls {
+		jsonBody := fmt.Sprintf(`{"url":"%s"}`, url)
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Ocp-Apim-Subscription-Key", os.Getenv("API_KEY"))
+		body := []byte(jsonBody)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+		req, err := http.NewRequest("POST", reqUrl, bytes.NewBuffer(body))
 
-	if err != nil {
-		panic(err)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Ocp-Apim-Subscription-Key", os.Getenv("API_KEY"))
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+
+		if err != nil {
+			panic(err)
+		}
+
+		defer resp.Body.Close()
+
+		resBody, _ := ioutil.ReadAll(resp.Body)
+
+		var parsedJsonMap []AzureResponse
+
+		if err := json.Unmarshal(resBody, &parsedJsonMap); err != nil {
+			log.Println(err)
+			continue
+		}
+
+		if len(parsedJsonMap) == 0 {
+			// no faces detected
+		}
+
+		parsedFace := parsedJsonMap[0]
+
+		detectedFace := DetectedFace{
+			FaceId:    parsedFace.FaceId,
+			Glasses:   parsedFace.FaceAttributes.Glasses == "NoGlasses",
+			Suprise:   parsedFace.FaceAttributes.Emotion["suprise"],
+			Happiness: parsedFace.FaceAttributes.Emotion["happiness"],
+		}
+		detectedFaces = append(detectedFaces, detectedFace)
 	}
-
-	defer resp.Body.Close()
-
-	resBody, _ := ioutil.ReadAll(resp.Body)
-
-	var parsedJsonMap []AzureResponse
-
-	if err := json.Unmarshal(resBody, &parsedJsonMap); err != nil {
-		panic(err)
-	}
-
-	if len(parsedJsonMap) == 0 {
-		// no faces detected
-	}
-
-	parsedFace := parsedJsonMap[0]
-
-	// glasses := faceAttributes["glasses"]
-
-	log.Println(parsedFace.FaceId)
-	// detectedFace := &DetectedFace{
-	// 	FaceId: string(parsedFace["faceId"]),
-	// }
-	// string
-	// detectedFace["faceAttributes"]["glasses"]              // string
-	// detectedFace["faceAttributes"]["emotion"]["suprise"]   // float
-	// detectedFace["faceAttributes"]["emotion"]["happiness"] // float
-
-	// Extract Face ID(s)
-
+	log.Println(detectedFaces)
 	// Return with Face ID(s)
 
 	// Delete images
