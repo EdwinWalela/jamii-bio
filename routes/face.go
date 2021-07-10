@@ -3,6 +3,7 @@ package routes
 import (
 	"bytes"
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -16,6 +17,24 @@ import (
 const UploadPath = "/static/images/"
 
 const Attributes = "?returnFaceAttributes=emotion,glasses"
+
+type DetectedFace struct {
+	FaceId    string
+	Glasses   bool
+	Suprise   float32
+	Happiness float32
+}
+
+type AzureResponse struct {
+	FaceId         string
+	FaceRectangle  interface{}
+	FaceAttributes AzureFaceAttributes
+}
+
+type AzureFaceAttributes struct {
+	Glasses string
+	Emotion map[string]float32
+}
 
 func hashFileName(filename string) string {
 	h := md5.New()
@@ -60,7 +79,6 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	idImgUrl := os.Getenv("SERVER_URL") + idPath
 
 	jsonBody := fmt.Sprintf(`{"url":"%s"}`, idImgUrl)
-	log.Println(jsonBody)
 
 	body := []byte(jsonBody)
 
@@ -79,7 +97,32 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	resBody, _ := ioutil.ReadAll(resp.Body)
-	log.Println(string(resBody))
+
+	var parsedJsonMap []AzureResponse
+
+	if err := json.Unmarshal(resBody, &parsedJsonMap); err != nil {
+		panic(err)
+	}
+
+	if len(parsedJsonMap) == 0 {
+		// no faces detected
+	}
+
+	parsedFace := parsedJsonMap[0]
+
+	// glasses := faceAttributes["glasses"]
+
+	log.Println(parsedFace.FaceId)
+	// detectedFace := &DetectedFace{
+	// 	FaceId: string(parsedFace["faceId"]),
+	// }
+	// string
+	// detectedFace["faceAttributes"]["glasses"]              // string
+	// detectedFace["faceAttributes"]["emotion"]["suprise"]   // float
+	// detectedFace["faceAttributes"]["emotion"]["happiness"] // float
+
+	// Extract Face ID(s)
+
 	// Return with Face ID(s)
 
 	// Delete images
