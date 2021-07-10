@@ -28,6 +28,7 @@ type DetectedFace struct {
 type DetectFaceResponse struct {
 	EmotionMatch bool     `json:"emotion-match"`
 	FaceId       []string `json:"face-id"`
+	MissingFace  []string `json:"missing-face"`
 }
 
 type AzureResponse struct {
@@ -50,6 +51,26 @@ func hashFileName(filename string) string {
 func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	idFace, idFormFile, idErr := r.FormFile("id")
 	userFace, faceFormFile, faceErr := r.FormFile("face")
+
+	res := &DetectFaceResponse{
+		EmotionMatch: false,
+		FaceId:       []string{},
+		MissingFace:  []string{},
+	}
+
+	if idFormFile == nil {
+		res.MissingFace = append(res.MissingFace, "id")
+	}
+
+	if faceFormFile == nil {
+		res.MissingFace = append(res.MissingFace, "selfie")
+	}
+
+	// Return if one or both file(s) are missing
+	if idFormFile == nil || faceFormFile == nil {
+		json.NewEncoder(w).Encode(res)
+		return
+	}
 
 	idFaceFileName := hashFileName(idFormFile.Filename) + "." + strings.Split(idFormFile.Filename, ".")[1]
 	userFaceFileName := hashFileName(faceFormFile.Filename) + "." + strings.Split(faceFormFile.Filename, ".")[1]
@@ -88,7 +109,7 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	faceUrls := []string{idImgUrl, faceUrl}
 	var detectedFaces []DetectedFace
 
-	for _, url := range faceUrls {
+	for i, url := range faceUrls {
 		jsonBody := fmt.Sprintf(`{"url":"%s"}`, url)
 
 		body := []byte(jsonBody)
@@ -113,6 +134,12 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 
 		if err := json.Unmarshal(resBody, &parsedJsonMap); err != nil {
 			log.Println(err)
+			if i == 0 {
+				res.MissingFace = append(res.MissingFace, "id")
+			}
+			if i == 1 {
+				res.MissingFace = append(res.MissingFace, "selfie")
+			}
 			continue
 		}
 
@@ -132,10 +159,6 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 		detectedFaces = append(detectedFaces, detectedFace)
 	}
 
-	res := &DetectFaceResponse{
-		EmotionMatch: false,
-		FaceId:       []string{},
-	}
 	// Return with Face ID(s)
 	for _, face := range detectedFaces {
 		if face.Suprise > 0.4 { // check if emotion match
