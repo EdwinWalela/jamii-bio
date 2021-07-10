@@ -25,6 +25,11 @@ type DetectedFace struct {
 	Happiness float32
 }
 
+type DetectFaceResponse struct {
+	EmotionMatch bool     `json:"emotion-match"`
+	FaceId       []string `json:"face-id"`
+}
+
 type AzureResponse struct {
 	FaceId         string
 	FaceRectangle  interface{}
@@ -69,17 +74,16 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 
-	defer idFile.Close()
-	defer faceFile.Close()
-
+	_, _ = io.Copy(idFile, idFace)
+	_, _ = io.Copy(faceFile, userFace)
 	// Send Images to Azure
 	reqUrl := os.Getenv("AZUREBASEURL") + Attributes
 
-	idPath = strings.Replace(idPath, "\\", "/", -1)
-	idImgUrl := os.Getenv("SERVER_URL") + idPath
+	idNewPath := strings.Replace(idPath, "\\", "/", -1)
+	idImgUrl := os.Getenv("SERVER_URL") + idNewPath
 
-	facePath = strings.Replace(facePath, "\\", "/", -1)
-	faceUrl := os.Getenv("SERVER_URL") + facePath
+	faceNewPath := strings.Replace(facePath, "\\", "/", -1)
+	faceUrl := os.Getenv("SERVER_URL") + faceNewPath
 
 	faceUrls := []string{idImgUrl, faceUrl}
 	var detectedFaces []DetectedFace
@@ -98,13 +102,13 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 		resp, err := client.Do(req)
 
 		if err != nil {
-			panic(err)
+			log.Println(err)
+			break
 		}
 
 		defer resp.Body.Close()
 
 		resBody, _ := ioutil.ReadAll(resp.Body)
-
 		var parsedJsonMap []AzureResponse
 
 		if err := json.Unmarshal(resBody, &parsedJsonMap); err != nil {
@@ -113,27 +117,44 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(parsedJsonMap) == 0 {
-			// no faces detected
+			log.Println("No faces found")
+			break
 		}
 
 		parsedFace := parsedJsonMap[0]
-
 		detectedFace := DetectedFace{
 			FaceId:    parsedFace.FaceId,
 			Glasses:   parsedFace.FaceAttributes.Glasses == "NoGlasses",
-			Suprise:   parsedFace.FaceAttributes.Emotion["suprise"],
+			Suprise:   parsedFace.FaceAttributes.Emotion["surprise"],
 			Happiness: parsedFace.FaceAttributes.Emotion["happiness"],
 		}
+
 		detectedFaces = append(detectedFaces, detectedFace)
 	}
-	log.Println(detectedFaces)
+
+	res := &DetectFaceResponse{
+		EmotionMatch: false,
+		FaceId:       []string{},
+	}
 	// Return with Face ID(s)
-
+	for _, face := range detectedFaces {
+		if face.Suprise > 0.4 { // check if emotion match
+			res.EmotionMatch = true
+		}
+		res.FaceId = append(res.FaceId, face.FaceId)
+	}
 	// Delete images
+	idFile.Close()
+	faceFile.Close()
 
-	_, _ = io.WriteString(w, "File uploaded")
-	_, _ = io.Copy(idFile, idFace)
-	_, _ = io.Copy(faceFile, userFace)
+	if e := os.Remove(idPath); e != nil {
+		log.Println(e)
+	}
+	if e := os.Remove(facePath); e != nil {
+		log.Println(e)
+	}
+
+	json.NewEncoder(w).Encode(res)
 
 }
 
