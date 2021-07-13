@@ -42,6 +42,20 @@ type AzureFaceAttributes struct {
 	Emotion map[string]float32
 }
 
+type VerificationBody struct {
+	Face1 string `json:"face1"`
+	Face2 string `json:"face2"`
+}
+
+type AzureVerificationRes struct {
+	IsIdentical bool    `json:"isIdentical"`
+	Confidence  float64 `json:"confidence"`
+}
+
+type VerifyFaceResponse struct {
+	Match bool `json:"match"`
+}
+
 func hashFileName(filename string) string {
 	h := md5.New()
 	h.Write([]byte(filename))
@@ -98,7 +112,7 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(idFile, idFace)
 	_, _ = io.Copy(faceFile, userFace)
 	// Send Images to Azure
-	reqUrl := os.Getenv("AZUREBASEURL") + Attributes
+	reqUrl := os.Getenv("AZURE_DETECT_BASEURL") + Attributes
 
 	idNewPath := strings.Replace(idPath, "\\", "/", -1)
 	idImgUrl := os.Getenv("SERVER_URL") + idNewPath
@@ -187,5 +201,60 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func VerificationHandler(w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
+
+	var verBody VerificationBody
+
+	// parse json request body (face1 & face2)
+	if err := decoder.Decode(&verBody); err != nil {
+		log.Println(err)
+		return
+	}
+
+	// Pack urls to json payload
+	jsonBody := fmt.Sprintf(`{"faceId1":"%s","faceId2":"%s"}`, verBody.Face1, verBody.Face2)
+
+	reqBody := []byte(jsonBody)
+
+	reqURL := os.Getenv("AZURE_VERIFY_BASEURL")
+
+	req, err := http.NewRequest("POST", reqURL, bytes.NewBuffer(reqBody))
+
+	// Set Headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Ocp-Apim-Subscription-Key", os.Getenv("API_KEY"))
+
+	client := &http.Client{}
+
+	// Send request
+	resp, err := client.Do(req)
+
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	defer resp.Body.Close()
+
+	var res VerifyFaceResponse
+
+	res.Match = false
+
+	// Serialize Azure response
+	resBody, _ := ioutil.ReadAll(resp.Body)
+
+	var parsedJson AzureVerificationRes
+
+	if err := json.Unmarshal(resBody, &parsedJson); err != nil {
+		log.Println(err)
+		return
+	}
+
+	if parsedJson.IsIdentical == true || parsedJson.Confidence > 0.45 {
+		res.Match = true
+	}
+
+	json.NewEncoder(w).Encode(res)
 	return
+
 }
