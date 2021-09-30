@@ -5,13 +5,18 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"io/ioutil"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/disintegration/imaging"
 )
 
 const UploadPath = "/static/images/"
@@ -62,9 +67,29 @@ func hashFileName(filename string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
+func cropImage(img multipart.File) (image.Image, image.Image, error) {
+	pic, err := jpeg.Decode(img)
+	if err != nil {
+		log.Println(err)
+	}
+
+	croppedImg := imaging.CropAnchor(pic, 600, 800, imaging.TopLeft)
+	croppedImg = imaging.Rotate90(croppedImg)
+	croppedImg = imaging.AdjustBrightness(croppedImg, 10)
+
+	pic = imaging.Rotate90(pic)
+
+	if err != nil {
+		return nil, nil, err
+	}
+	return croppedImg, pic, nil
+}
+
 func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	idFace, idFormFile, idErr := r.FormFile("id")
 	userFace, faceFormFile, faceErr := r.FormFile("face")
+	idDetails := idFace
+	idDetailsFormFile := idFormFile
 
 	res := &DetectFaceResponse{
 		EmotionMatch: false,
@@ -86,8 +111,9 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idFaceFileName := hashFileName(idFormFile.Filename) + "." + strings.Split(idFormFile.Filename, ".")[1]
-	userFaceFileName := hashFileName(faceFormFile.Filename) + "." + strings.Split(faceFormFile.Filename, ".")[1]
+	idFaceFileName := hashFileName(idFormFile.Filename) + ".jpg"
+	userFaceFileName := hashFileName(faceFormFile.Filename) + ".jpg"
+	idDetailsFileName := hashFileName(idDetailsFormFile.Filename) + "-ocr.jpg"
 
 	if idErr != nil {
 		panic(idErr)
@@ -98,19 +124,35 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 
 	defer idFace.Close()
 	defer userFace.Close()
+	defer idDetails.Close()
 
 	idPath := filepath.Join(".", UploadPath, idFaceFileName)
 	facePath := filepath.Join(".", UploadPath, userFaceFileName)
+	idDetailsPath := filepath.Join(".", UploadPath, idDetailsFileName)
 
 	idFile, err := os.OpenFile(idPath, os.O_WRONLY|os.O_CREATE, 0666)
 	faceFile, err := os.OpenFile(facePath, os.O_WRONLY|os.O_CREATE, 0666)
+	idDetailsFile, err := os.OpenFile(idDetailsPath, os.O_WRONLY|os.O_CREATE, 0666)
 
 	if err != nil {
 		panic(err)
 	}
+	croppedImg, originalImg, err := cropImage(idFace)
 
-	_, _ = io.Copy(idFile, idFace)
+	if err != nil {
+		log.Println(err)
+	}
+
+	buffCropped := bytes.NewBuffer([]byte{})
+	buffOriginal := bytes.NewBuffer([]byte{})
+
+	jpeg.Encode(buffCropped, croppedImg, &jpeg.Options{Quality: 100})
+	jpeg.Encode(buffOriginal, originalImg, &jpeg.Options{Quality: 100})
+
+	_, _ = io.Copy(idFile, buffCropped)
 	_, _ = io.Copy(faceFile, userFace)
+	_, _ = io.Copy(idDetailsFile, buffOriginal)
+
 	// Send Images to Azure
 	reqUrl := os.Getenv("AZURE_DETECT_BASEURL") + Attributes
 
@@ -140,13 +182,13 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 			log.Println(err)
 			break
 		}
-
 		defer resp.Body.Close()
 
 		resBody, _ := ioutil.ReadAll(resp.Body)
 		var parsedJsonMap []AzureResponse
 
 		if err := json.Unmarshal(resBody, &parsedJsonMap); err != nil {
+
 			log.Println(err)
 			if i == 0 {
 				res.MissingFace = append(res.MissingFace, "id")
@@ -156,7 +198,6 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-
 		if len(parsedJsonMap) == 0 {
 			log.Println("No faces found")
 			break
@@ -169,15 +210,14 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 			Suprise:   parsedFace.FaceAttributes.Emotion["surprise"],
 			Happiness: parsedFace.FaceAttributes.Emotion["happiness"],
 		}
-
 		detectedFaces = append(detectedFaces, detectedFace)
 	}
 
 	// Return with Face ID(s)
 	for _, face := range detectedFaces {
-		if face.Suprise > 0.4 { // check if emotion match
-			res.EmotionMatch = true
-		}
+		// if face.Suprise > 0.4 { // check if emotion match
+		res.EmotionMatch = true
+		// }
 		res.FaceId = append(res.FaceId, face.FaceId)
 	}
 
@@ -188,19 +228,21 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	// Delete images
 	idFile.Close()
 	faceFile.Close()
+	idDetailsFile.Close()
 
-	if e := os.Remove(idPath); e != nil {
-		log.Println(e)
-	}
-	if e := os.Remove(facePath); e != nil {
-		log.Println(e)
-	}
+	// if e := os.Remove(idPath); e != nil {
+	// 	log.Println(e)
+	// }
+	// if e := os.Remove(facePath); e != nil {
+	// 	log.Println(e)
+	// }
 
 	json.NewEncoder(w).Encode(res)
-
+	return
 }
 
 func VerificationHandler(w http.ResponseWriter, r *http.Request) {
+
 	decoder := json.NewDecoder(r.Body)
 
 	var verBody VerificationBody
@@ -213,7 +255,7 @@ func VerificationHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Pack urls to json payload
 	jsonBody := fmt.Sprintf(`{"faceId1":"%s","faceId2":"%s"}`, verBody.Face1, verBody.Face2)
-
+	fmt.Println(jsonBody)
 	reqBody := []byte(jsonBody)
 
 	reqURL := os.Getenv("AZURE_VERIFY_BASEURL")
@@ -230,6 +272,7 @@ func VerificationHandler(w http.ResponseWriter, r *http.Request) {
 	resp, err := client.Do(req)
 
 	if err != nil {
+
 		log.Println(err)
 		return
 	}
@@ -246,11 +289,12 @@ func VerificationHandler(w http.ResponseWriter, r *http.Request) {
 	var parsedJson AzureVerificationRes
 
 	if err := json.Unmarshal(resBody, &parsedJson); err != nil {
+
 		log.Println(err)
 		return
 	}
 
-	if parsedJson.IsIdentical == true || parsedJson.Confidence > 0.45 {
+	if parsedJson.IsIdentical == true || parsedJson.Confidence > 0.40 {
 		res.Match = true
 	}
 
