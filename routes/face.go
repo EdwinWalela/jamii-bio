@@ -2,6 +2,7 @@ package routes
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -16,7 +17,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	vision "cloud.google.com/go/vision/apiv1"
 	"github.com/disintegration/imaging"
+	"google.golang.org/api/option"
 )
 
 const UploadPath = "/static/images/"
@@ -83,6 +86,42 @@ func cropImage(img multipart.File) (image.Image, image.Image, error) {
 		return nil, nil, err
 	}
 	return croppedImg, pic, nil
+}
+func detectText(file string) error {
+	ctx := context.Background()
+	// var extractedData []string
+
+	client, err := vision.NewImageAnnotatorClient(ctx, option.WithCredentialsFile("gg-key.json"))
+	if err != nil {
+		return err
+	}
+
+	f, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	image, err := vision.NewImageFromReader(f)
+	if err != nil {
+		return err
+	}
+	annotations, err := client.DetectTexts(ctx, image, nil, 10)
+	if err != nil {
+		return err
+	}
+
+	if len(annotations) == 0 {
+		fmt.Println("No text found.")
+	} else {
+		data := strings.Split(annotations[0].Description, "\n")
+		fmt.Println(data)
+		fmt.Println(data[0])
+		fmt.Println(string(data[8]))
+		fmt.Println(string(data[11]))
+		fmt.Println(string(data[14]))
+	}
+	return nil
 }
 
 func DetectHandler(w http.ResponseWriter, r *http.Request) {
@@ -152,6 +191,10 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(idFile, buffCropped)
 	_, _ = io.Copy(faceFile, userFace)
 	_, _ = io.Copy(idDetailsFile, buffOriginal)
+
+	if err := detectText(idDetailsPath); err != nil {
+		log.Println(err)
+	}
 
 	// Send Images to Azure
 	reqUrl := os.Getenv("AZURE_DETECT_BASEURL") + Attributes
@@ -230,12 +273,12 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	faceFile.Close()
 	idDetailsFile.Close()
 
-	// if e := os.Remove(idPath); e != nil {
-	// 	log.Println(e)
-	// }
-	// if e := os.Remove(facePath); e != nil {
-	// 	log.Println(e)
-	// }
+	if e := os.Remove(idPath); e != nil {
+		log.Println(e)
+	}
+	if e := os.Remove(facePath); e != nil {
+		log.Println(e)
+	}
 
 	json.NewEncoder(w).Encode(res)
 	return
