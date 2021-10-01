@@ -34,9 +34,10 @@ type DetectedFace struct {
 }
 
 type DetectFaceResponse struct {
-	EmotionMatch bool     `json:"emotion-match"`
-	FaceId       []string `json:"face-id"`
-	MissingFace  []string `json:"missing-face"`
+	EmotionMatch  bool     `json:"emotion-match"`
+	FaceId        []string `json:"face-id"`
+	MissingFace   []string `json:"missing-face"`
+	ExtractedText []string `json:"extracted-text`
 }
 
 type AzureResponse struct {
@@ -87,41 +88,69 @@ func cropImage(img multipart.File) (image.Image, image.Image, error) {
 	}
 	return croppedImg, pic, nil
 }
-func detectText(file string) error {
-	ctx := context.Background()
-	// var extractedData []string
 
+func deleteEmpty(s []string) []string {
+	var r []string
+	for _, str := range s {
+		if str != "" || len(str) > 3 {
+			str = strings.TrimSpace(str)
+			r = append(r, str)
+		}
+	}
+	return r
+}
+
+func detectText(file string) ([]string, error) {
+	ctx := context.Background()
+	var text []string
 	client, err := vision.NewImageAnnotatorClient(ctx, option.WithCredentialsFile("gg-key.json"))
 	if err != nil {
-		return err
+		return text, err
 	}
 
 	f, err := os.Open(file)
 	if err != nil {
-		return err
+		return text, err
 	}
 	defer f.Close()
 
 	image, err := vision.NewImageFromReader(f)
 	if err != nil {
-		return err
+		return text, err
 	}
 	annotations, err := client.DetectTexts(ctx, image, nil, 10)
 	if err != nil {
-		return err
+		return text, err
 	}
 
 	if len(annotations) == 0 {
 		fmt.Println("No text found.")
 	} else {
-		data := strings.Split(annotations[0].Description, "\n")
-		fmt.Println(data)
-		fmt.Println(data[0])
-		fmt.Println(string(data[8]))
-		fmt.Println(string(data[11]))
-		fmt.Println(string(data[14]))
+		data := annotations[0].Description
+		data = strings.ReplaceAll(data, "JAMHURI YA KENYA", "")
+		data = strings.ReplaceAll(data, "REPUBLIC OF KENYA", "")
+		data = strings.ReplaceAll(data, "SERIAL NUMBER", "")
+		data = strings.ReplaceAll(data, "HARAMB", "")
+		data = strings.ReplaceAll(data, "HARAMBE", "")
+		data = strings.ReplaceAll(data, "HARAMBEE", "")
+		data = strings.ReplaceAll(data, "ID NUMBER", "")
+		data = strings.ReplaceAll(data, "FULL NAMES", "")
+		data = strings.ReplaceAll(data, "DATE OF BIRTH", "")
+		data = strings.ReplaceAll(data, "SEX", "")
+		data = strings.ReplaceAll(data, "K", "")
+		data = strings.ReplaceAll(data, "G", "")
+		data = strings.ReplaceAll(data, "DATE OF ISSUE", "")
+		data = strings.ReplaceAll(data, "HOLDER'S SIGN.", "")
+		data = strings.ReplaceAll(data, "HOLDER'S SIN.", "")
+		data = strings.ReplaceAll(data, "PLACE OF ISSUE", "")
+		data = strings.ReplaceAll(data, ":", "")
+		data = strings.ReplaceAll(data, "DISTRICT OF BIRTH", "")
+		data = strings.TrimSpace(data)
+		text = strings.Split(data, "\n")
+		text = deleteEmpty(text)
+
 	}
-	return nil
+	return text, nil
 }
 
 func DetectHandler(w http.ResponseWriter, r *http.Request) {
@@ -192,10 +221,12 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(faceFile, userFace)
 	_, _ = io.Copy(idDetailsFile, buffOriginal)
 
-	if err := detectText(idDetailsPath); err != nil {
+	var extractedText []string
+
+	if extractedText, err = detectText(idDetailsPath); err != nil {
 		log.Println(err)
 	}
-
+	res.ExtractedText = extractedText
 	// Send Images to Azure
 	reqUrl := os.Getenv("AZURE_DETECT_BASEURL") + Attributes
 
