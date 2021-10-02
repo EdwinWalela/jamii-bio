@@ -311,6 +311,10 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println(e)
 	}
 
+	if e := os.Remove(idDetailsPath); e != nil {
+		log.Println(e)
+	}
+
 	json.NewEncoder(w).Encode(res)
 	return
 }
@@ -374,5 +378,4 @@ func VerificationHandler(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(res)
 	return
-
 }
