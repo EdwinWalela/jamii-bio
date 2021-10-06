@@ -37,7 +37,7 @@ type DetectFaceResponse struct {
 	EmotionMatch  bool     `json:"emotion-match"`
 	FaceId        []string `json:"face-id"`
 	MissingFace   []string `json:"missing-face"`
-	ExtractedText []string `json:"extracted-text`
+	ExtractedText []string `json:"extracted-text"`
 }
 
 type AzureResponse struct {
@@ -92,7 +92,7 @@ func cropImage(img multipart.File) (image.Image, image.Image, error) {
 func deleteEmpty(s []string) []string {
 	var r []string
 	for _, str := range s {
-		if str != "" || len(str) > 3 {
+		if str != "" && len(str) > 3 {
 			str = strings.TrimSpace(str)
 			r = append(r, str)
 		}
@@ -314,7 +314,6 @@ func DetectHandler(w http.ResponseWriter, r *http.Request) {
 	if e := os.Remove(idDetailsPath); e != nil {
 		log.Println(e)
 	}
-
 	json.NewEncoder(w).Encode(res)
 	return
 }
