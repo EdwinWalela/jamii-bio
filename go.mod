@@ -1,6 +1,7 @@
 module github.com/edwinwalela/jamii-bio
 
-go 1.15
+// +heroku goVersion go1.17
+go 1.17
 
 require (
 	cloud.google.com/go v0.97.0 // indirect
